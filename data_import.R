@@ -10,10 +10,10 @@ if (!require('xlsx')) install.packages('xlsx'); library('xlsx')
 if (!require('dplyr')) install.packages('dplyr'); library('dplyr')
 if (!require('writexl')) install.packages('writexl'); library('writexl')
 
-filePath <- "C:\\Users\\paulb\\Dropbox\\Paul\\FIND\\Guinea\\RCode\\RCode\\Guinea summary\\Gassama_System"
+filePath <- "C:/Users/paulb/Dropbox/Paul/FIND/Guinea/RCode/RCode/Guinea summary/Gassama_System"
 downloadPath <- "c:/Users/paulb/Downloads"
-outdir <- paste0(filePath, "\\", "outputs")
-outFile <- paste0(filePath, "\\", "outputs", "\\", outFolder)
+outdir <- paste0(filePath, "/", "outputs")
+outFile <- paste0(filePath, "/", "outputs", "/", outFolder)
 if(!dir.exists(outFile)) dir.create(outFile)
 
 
@@ -23,7 +23,7 @@ cFiles <- cFiles[grepl("PORTE-A-PORTE", cFiles)]
 tDate <- rev(sort(substr(cFiles, nchar(cFiles)-23, nchar(cFiles) -5)))
 fName <- paste0(downloadPath, "/", cFiles[grepl(tDate[1], cFiles)])
 
-outFileFile <- paste0(outFile, "\\", outFolder, ".xlsx")
+outFileFile <- paste0(outFile, "/", outFolder, ".xlsx")
 
 doorToDoor <- readxl::read_excel(fName)
 
