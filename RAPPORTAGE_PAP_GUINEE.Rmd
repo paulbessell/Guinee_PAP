@@ -1,0 +1,424 @@
+---
+output: html_document
+params:
+  Start Date: "2024-04-23"
+  End Date: "2024-04-26"
+  Prefecture: "Dubreka"
+---
+
+---
+title: "Resume des activites PAP Guinee"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = F)
+```
+
+```{r set-options, echo=FALSE, cache=FALSE}
+options(width = 200)
+```
+
+```{r params, include=FALSE, echo = F}
+dateRange <- c(as.Date(params$`Start Date`), as.Date(params$`End Date`))
+
+if (!require('flexdashboard')) install.packages('flexdashboard')
+if (!require('shiny')) install.packages('shiny'); library('tidyr')
+if (!require('shinythemes')) install.packages('shinythemes')
+# if (!require('ggplot2')) install.packages('ggplot2')
+if (!require('DT')) install.packages('DT')
+if (!require('sp')) install.packages('sp')
+# if (!require('plotly')) install.packages('plotly')
+if (!require('leaflet.providers')) install.packages('leaflet.providers')
+if (!require('leaflet')) install.packages('leaflet')
+
+library(flexdashboard); library(shiny); library(shinythemes); library(DT); library(sp); library(leaflet.providers); library(leaflet)
+
+utm34n <- CRS("+proj=utm +zone=34 +ellps=WGS84 +datum=WGS84 +units=m +no_defs")
+wgs84 <- CRS("+proj=longlat +ellps=WGS84 +datum=WGS84 +no_defs")
+
+source("C:\\Users\\paul\\Dropbox\\Paul\\FIND\\Guinea\\RCode\\RCode\\Guinea summary\\Gassama_System\\scripts\\data_import.R")
+
+
+villageYear <- doorToDoor
+
+doorToDoorRepeatComb <-  doorToDoorRepeatComb
+
+villageDemoDF <-  doorToDoorRepeatComb %>%
+    mutate(age = as.integer(age)) %>%
+    mutate(pAgeCut = cut(age, breaks = seq(0, 90, by = 10))) %>%
+    mutate(pAgeCut = gsub(",", "-", pAgeCut),
+           pAgeCut = gsub("\\(|\\]", "", pAgeCut)) %>%
+    group_by(sex, pAgeCut) %>%
+    tally(name = "Total") %>%
+    ungroup() %>%
+    mutate("Prop" = Total / sum(Total) * 100) %>%
+    rename("Sex" = "sex") %>%
+    filter(!is.na(pAgeCut) & !is.na(Sex)) 
+    
+
+villageDemoFoyer <- doorToDoorRepeatComb %>%
+    group_by(test_district) %>%
+    summarise() %>%
+    pull(test_district)
+
+ demographicsA <- demographics
+ demographicsAll <-demographicsA
+
+demographicsSummarise <-demographicsAll %>%
+    group_by(sex, pAgeCut) %>%
+    tally(name = "Total") %>%
+    ungroup() %>%
+    mutate("Prop" = Total / sum(Total) * 100) %>%
+    rename("Sex" = "sex") %>%
+    filter(!is.na(pAgeCut) & !is.na(Sex))
+
+  village_sf <- household
+  doorToDoorSF <- SpatialPointsDataFrame(coords = cbind(village_sf$test.Longitude, village_sf$test.Latitude), data = village_sf)
+
+```
+
+
+Résumé des activités {data-navmenu="Activités porte à porte"}
+=======================================================================
+```{r Summary, echo = F, size="huge"}
+  period <- paste0(dateRange[1], " - ", dateRange[2])
+
+  cat(paste(params$Prefecture, "\n Periode = ", period))
+
+  rate <- doorToDoor 
+
+  cat(paste("Ménages dépistés ", nrow(rate)))
+  
+  prate <- doorToDoor 
+    prateP <- sum(prate$household_members)
+
+    prateT <- sum(prate$number_tested)
+  
+   # prate <- sum(doorToDoor$household_info_number_tested[grepl(input$foyer, doorToDoor$test_district)])
+    cat("Population total ", prateP)
+
+        cat("Personnes dépistés ", prateT)
+
+      prate <- doorToDoorRepeatComb 
+  prate <- sum(prate$sd2_done == "positive", na.rm = T)
+ pratepos <- round(prate / prateT*100, 1)
+ 
+  cat("SD2 TDR+ ", prate, "(", pratepos, "%", ")")
+
+
+  prate <- doorToDoorRepeatComb 
+  prate <- sum(prate$coris_done == "positive", na.rm = T)
+    
+      cat("Coris TDR+ ", prate)
+
+    
+  prate <- doorToDoorRepeatComb  
+  prate <- sum(prate$final_result == "Positif", na.rm = T)
+    
+      cat("Suspects TDR+ Referee", prate)
+  
+  pmale <-  doorToDoorRepeatComb  
+  maleSum <- round(sum(doorToDoorRepeatComb$sex == "male", na.rm = T) / nrow(doorToDoorRepeatComb),3) * 100
+  maleAgeMean <- round(mean(doorToDoorRepeatComb$age[doorToDoorRepeatComb$sex == "male"], na.rm = T),1)
+  maleAgeMedian <- median(doorToDoorRepeatComb$age[doorToDoorRepeatComb$sex == "male"], na.rm = T)
+  femaleAgeMean <- round(mean(doorToDoorRepeatComb$age[doorToDoorRepeatComb$sex == "female"], na.rm = T),1)
+  femaleAgeMedian <- median(doorToDoorRepeatComb$age[doorToDoorRepeatComb$sex == "female"], na.rm = T)
+  
+    cat("% hommes ", maleSum, "%")
+    
+    cat("Age moyen - hommes = ", maleAgeMean, " Age median = ", maleAgeMedian)
+    cat("Age moyen - femmes = ", femaleAgeMean, " Age median = ", femaleAgeMedian)
+
+
+```
+
+### <font size = "+2"> <b> Carte de dépistage </font size></b>
+```{r Carte des activites, echo = F, out.width='120%', warning=F}
+  doorToDoorData <- doorToDoorSF
+  doorToDoorData$radius <- (10 * doorToDoorData$Tested / max(doorToDoorData$Tested)) + 1
+  doorToDoorData$Posradius <- 1
+  if(sum(doorToDoor$RDT_Suspect) > 0) doorToDoorData$Posradius <- (2 * doorToDoorData$RDT_Suspect / max(doorToDoorData$RDT_Suspect)) + 2
+  doorToDoorData$Posradius[doorToDoorData$RDT_Suspect == 0] <- NA 
+  doorToDoorData$lab <- paste0("<b>", "Village = ", doorToDoorData$Final_Village,
+                               "</b><br/>", "Numero d'equipe = ", doorToDoorData$team_code,
+                               "</b><br/>", "Numero du menage = ", doorToDoorData$household_code,
+                               "</b><br/>", "Population du menage = ", doorToDoorData$household_members,
+                               "</b><br/>", "Personnes testees = ", doorToDoorData$Tested,
+                               "</b><br/>", "TDR+ suspects = ", doorToDoorData$RDT_Suspect)
+
+  leaflet(doorToDoorData) %>%
+    addTiles(group = "Streets") %>%
+    addProviderTiles("Esri.WorldImagery", group = "Imagery") %>%
+    addMarkers(label = ~lapply(lab, htmltools::HTML), group = "Menages",
+    clusterOptions = markerClusterOptions(maxClusterRadius = 10)) %>%
+    addCircleMarkers(label = ~lapply(lab, htmltools::HTML), radius = doorToDoorData$radius, group = "Personnes testees",
+    clusterOptions = markerClusterOptions(maxClusterRadius = 10)) %>%
+    addCircleMarkers(data = doorToDoorData[doorToDoorData$RDT_Suspect > 0,], label = ~lapply(lab, htmltools::HTML), radius = doorToDoorData$Posradius[doorToDoorData$RDT_Suspect > 0], col = "red", group = "TDR+ suspects") %>%
+    addLayersControl(
+      baseGroups = c("Streets", "Imagery"),
+      overlayGroups = c("Menages", "Personnes testees", "TDR+ suspects"),
+      options = layersControlOptions(collapsed = FALSE)
+    ) %>%
+    hideGroup("Menages") %>%
+    hideGroup("TDR+ suspects")
+
+```
+
+### <font size = "+2"> <b> Résultats globaux par village </font size></b>
+```{r Resume par village complets, echo = F, warnings = F}
+cFilename <- paste0("Guinee-Porte-a-Porte-Village", Sys.Date())
+
+  doorToDoorRed <- doorToDoorRepeatComb  
+  doorToDoorRed <- doorToDoorRed %>%
+    dplyr::select(Final_Village,
+                  reportdate,
+                  ID,
+                  team_code,
+                  household_code,
+                  sd2_done,
+                  coris_done,
+                  final_result,
+                  household_members,
+                  number_tested) %>%
+    group_by(Final_Village) %>%
+    summarise("Ménages" = length(unique(ID)),
+              "Personnes testées" = n(),
+              "SD2+" = sum(sd2_done == "Positive"),
+              "Coris+" = sum(coris_done == "Positive", na.rm = T),
+              "N. indetermine" = sum(final_result == "Indéterminé"),
+              "N. TDR+" = sum(final_result == "Positif")) %>%
+    rename("Village" = "Final_Village")
+DT::datatable(doorToDoorRed, extensions = c('Scroller', 'Buttons', 'ColReorder'),
+                            escape = FALSE,
+                            options = list(deferRender = F,
+                                           columnDefs = list(list(className = 'dt-center', targets = 7)),
+                                           colReorder = TRUE,
+                            scrollY = 300, scroller = TRUE, pageLength = 4,
+                            dom = 'Blfrtip',
+                            buttons = list('copy',
+                                           list(extend = 'csv', filename = cFilename),
+                                           list(extend = 'excel', filename = cFilename),
+                                           list(extend = 'pdf', filename = cFilename), 'print')),
+                            selection = "none")
+
+```
+
+
+### <font size = "+2"> <b> Résultats globaux par equipe </font size></b>
+```{r Resume par equipe complets, echo = F, warnings = F}
+cFilename <- paste0("Guinee-Porte-a-Porte-Equipe-complet", Sys.Date())
+
+  doorToDoorRed <- doorToDoorRepeatComb
+  doorToDoorRed <- doorToDoorRed %>%
+    dplyr::select(reportdate,
+                  ID,
+                  team_code,
+                  household_code,
+                  sd2_done,
+                  coris_done,
+                  final_result,
+                  household_members,
+                  number_tested) %>%
+    group_by(team_code) %>%
+    summarise("Ménages" = length(unique(ID)),
+              "Personnes testées" = n(),
+              "SD2+" = sum(sd2_done == "positive"),
+              "Coris+" = sum(coris_done == "positive", na.rm = T),
+              "N. TDR+" = sum(final_result == "Positif")) %>%
+    rename("Equipe" = "team_code")
+DT::datatable(doorToDoorRed, extensions = c('Scroller', 'Buttons', 'ColReorder'),
+                            escape = FALSE,
+                            options = list(deferRender = F,
+                                           columnDefs = list(list(className = 'dt-center', targets = 6)),
+                                           colReorder = TRUE,
+                            scrollY = 300, scroller = TRUE, pageLength = 4,
+                            dom = 'Blfrtip',
+                            buttons = list('copy',
+                                           list(extend = 'csv', filename = cFilename),
+                                           list(extend = 'excel', filename = cFilename),
+                                           list(extend = 'pdf', filename = cFilename), 'print')),
+                            selection = "none")
+```
+
+### <font size = "+2"> <b> Résultats par equipe </font size></b>
+```{r Resume par equipe, echo = F, warnings = F}
+cFilename <- paste0("Guinee-Porte-a-Porte-Equipe-Complet", Sys.Date())
+
+  doorToDoorRed <- doorToDoorRepeatComb
+  doorToDoorRed <- doorToDoorRed %>%
+    dplyr::select(reportdate,
+                  ID,
+                  team_code,
+                  household_code,
+                  sd2_done,
+                  coris_done,
+                  final_result,
+                  household_members,
+                  number_tested) %>%
+    group_by(team_code, reportdate) %>%
+    summarise("Ménages" = length(unique(ID)),
+              "Personnes testées" = n(),
+              "SD2+" = sum(sd2_done == "Positive"),
+              "Coris+" = sum(coris_done == "Positive", na.rm = T),
+              "N. indetermine" = sum(final_result == "Indéterminé"),
+              "N. TDR+" = sum(final_result == "Positif")) %>%
+    rename("Date" = "reportdate",
+           "Equipe" = "team_code")  %>%
+    mutate(Date = format(Date, format = "%Y-%m-%d"))
+DT::datatable(doorToDoorRed, extensions = c('Scroller', 'Buttons', 'ColReorder'),
+                            escape = FALSE,
+                            options = list(deferRender = F,
+                                           columnDefs = list(list(className = 'dt-center', targets = 8)),
+                                           colReorder = TRUE,
+                            scrollY = 300, scroller = TRUE, pageLength = 4,
+                            dom = 'Blfrtip',
+                            buttons = list('copy',
+                                           list(extend = 'csv', filename = cFilename),
+                                           list(extend = 'excel', filename = cFilename),
+                                           list(extend = 'pdf', filename = cFilename), 'print')),
+                            selection = "none")
+```
+
+### <font size = "+2"> <b> Résultats par village </font size></b>
+```{r Resume par village, echo = F, warnings = F}
+cFilename <- paste0("Guinee-Porte-a-Porte-Village", Sys.Date())
+
+  doorToDoorRed <- doorToDoorRepeatComb
+  doorToDoorRed <- doorToDoorRed %>%
+    dplyr::select(Final_Village,
+                  reportdate,
+                  ID,
+                  team_code,
+                  household_code,
+                  sd2_done,
+                  coris_done,
+                  final_result,
+                  household_members,
+                  number_tested) %>%
+    mutate(reportdate = as.Date(reportdate)) %>%
+    group_by(Final_Village, reportdate) %>%
+    summarise("Ménages" = length(unique(ID)),
+              "Personnes testées" = n(),
+              "SD2+" = sum(sd2_done == "Positive"),
+              "Coris+" = sum(coris_done == "Positive", na.rm = T),
+              "N. indetermine" = sum(final_result == "Indéterminé"),
+              "N. TDR+" = sum(final_result == "Positif")) %>%
+    rename("Date" = "reportdate",
+           "Village" = "Final_Village")  %>%
+    mutate(Date = format(Date, format = "%Y-%m-%d"))
+DT::datatable(doorToDoorRed, extensions = c('Scroller', 'Buttons', 'ColReorder'),
+                            escape = FALSE,
+                            options = list(deferRender = F,
+                                           columnDefs = list(list(className = 'dt-center', targets = 8)),
+                                           colReorder = TRUE,
+                            scrollY = 300, scroller = TRUE, pageLength = 4,
+                            dom = 'Blfrtip',
+                            buttons = list('copy',
+                                           list(extend = 'csv', filename = cFilename),
+                                           list(extend = 'excel', filename = cFilename),
+                                           list(extend = 'pdf', filename = cFilename), 'print')),
+                            selection = "none")
+```
+
+### <font size = "+2"> <b> Résultats par village et equipe </font size></b>
+```{r Resume par village et equipe, echo = F, warnings = F}
+cFilename <- paste0("Guinee-Porte-a-Porte-Village-Equipe", Sys.Date())
+
+  doorToDoorRed <- doorToDoorRepeatComb
+  doorToDoorRed <- doorToDoorRed %>%
+    dplyr::select(Final_Village,
+                  reportdate,
+                  ID,
+                  team_code,
+                  household_code,
+                  sd2_done,
+                  coris_done,
+                  final_result,
+                  household_members,
+                  number_tested) %>%
+    group_by(Final_Village, team_code) %>%
+    summarise("Ménages" = length(unique(ID)),
+              "Personnes testées" = n(),
+              "SD2+" = sum(sd2_done == "Positive"),
+              "Coris+" = sum(coris_done == "Positive", na.rm = T),
+              "N. indetermine" = sum(final_result == "Indéterminé"),
+              "N. TDR+" = sum(final_result == "Positif")) %>%
+    rename("Equipe" = "team_code",
+           "Village" = "Final_Village") %>%
+    mutate(Equipe = as.integer(Equipe)) %>%
+    arrange(Equipe)
+DT::datatable(doorToDoorRed, extensions = c('Scroller', 'Buttons', 'ColReorder'),
+                            escape = FALSE,
+                            options = list(deferRender = F,
+                                           columnDefs = list(list(className = 'dt-center', targets = 8)),
+                                           colReorder = TRUE,
+                            scrollY = 300, scroller = TRUE, pageLength = 4,
+                            dom = 'Blfrtip',
+                            buttons = list('copy',
+                                           list(extend = 'csv', filename = cFilename),
+                                           list(extend = 'excel', filename = cFilename),
+                                           list(extend = 'pdf', filename = cFilename), 'print')),
+                            selection = "none")
+```
+### <font size = "+2"> <b> Suspects à suivre </font size></b>
+```{r Positive suspects, echo = F}
+cFilename <- paste0("Guinee-Suspects-Positif-", Sys.Date())
+
+  doorToDoorRed <- doorToDoorIndividuals  %>%
+    filter(final_result == "Positif")
+  doorToDoorRed <- doorToDoorRed %>%
+    dplyr::select(tested_code,
+                  reportdate,
+                  test_district,
+                  Final_Village,
+                  sd2_done,
+                  coris_done,
+                  historical_hat_case,
+                  final_result) %>%
+        mutate(reportdate = as.Date(reportdate))
+DT::datatable(doorToDoorRed, extensions = c('Scroller', 'Buttons', 'ColReorder'),
+                            escape = FALSE,
+                            options = list(deferRender = F,
+                                           columnDefs = list(list(className = 'dt-center', targets = 6)),
+                                           colReorder = TRUE,
+                            scrollY = 300, scroller = TRUE, pageLength = 4,
+                            dom = 'Blfrtip',
+                            buttons = list('copy',
+                                           list(extend = 'csv', filename = cFilename),
+                                           list(extend = 'excel', filename = cFilename),
+                                           list(extend = 'pdf', filename = cFilename), 'print')),
+                            selection = "none",
+                            colnames = c("Code", "Date", "District", "Village", "SD2", "Coris", "Historical case", "Result final"))
+```
+
+
+### <font size = "+2"> <b> Suspects TDR+ </font size></b>
+```{r Resume par suspect, echo = F}
+cFilename <- paste0("Guinee-Suspects-TDR-", Sys.Date())
+
+  doorToDoorRed <- doorToDoorIndividuals  %>%
+    filter(final_result != "Negatif")
+  doorToDoorRed <- doorToDoorRed %>%
+    dplyr::select(tested_code,
+                  reportdate,
+                  test_district,
+                  Final_Village,
+                  sd2_done,
+                  coris_done,
+                  historical_hat_case,
+                  final_result) %>%
+        mutate(reportdate = as.Date(reportdate))
+DT::datatable(doorToDoorRed, extensions = c('Scroller', 'Buttons', 'ColReorder'),
+                            escape = FALSE,
+                            options = list(deferRender = F,
+                                           columnDefs = list(list(className = 'dt-center', targets = 6)),
+                                           colReorder = TRUE,
+                            scrollY = 300, scroller = TRUE, pageLength = 4,
+                            dom = 'Blfrtip',
+                            buttons = list('copy',
+                                           list(extend = 'csv', filename = cFilename),
+                                           list(extend = 'excel', filename = cFilename),
+                                           list(extend = 'pdf', filename = cFilename), 'print')),
+                            selection = "none",
+                            colnames = c("Code", "Date", "District", "Village", "SD2", "Coris", "Historical case", "Result final"))
+```
